@@ -1,0 +1,31 @@
+{
+  "name": "Musizerr provider template",
+  "version": 2,
+  "providers": [
+    {
+      "name": "example",
+      "image": "ghcr.io/sossiogll/musizerr-provider-example",
+      "digest": "sha256:a3ccda76ad69c4161708baa789faa295018e2c8b4b3c9bdfdbd0871eeea0ab4a",
+      "provider_api_version": 5,
+      "roles": [
+        "metadata"
+      ],
+      "label": "Example",
+      "description": "An example Musizerr provider: track search through the iTunes Search API.",
+      "homepage": "https://performance-partners.apple.com/search-api",
+      "permissions": {
+        "egress": [
+          "itunes.apple.com:443"
+        ],
+        "egress_from_settings": [],
+        "filesystem_from_settings": [],
+        "limits": {
+          "memory_mb": null,
+          "open_files": null,
+          "processes": null
+        },
+        "tcp_from_settings": []
+      }
+    }
+  ]
+}

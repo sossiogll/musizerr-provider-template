@@ -1,0 +1,36 @@
+name: publish
+
+# Run it by hand (Actions > publish > Run workflow) on the branch catalog.json lives on, after raising the
+# version in pyproject.toml: it pushes ghcr.io/<owner>/musizerr-provider-<name>:<version> for linux/amd64 and
+# linux/arm64 and commits catalog.json with the new digest.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency: publish
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: scripts/test.sh
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: publish the image and write its catalog entry
+        run: IMAGE_NAMESPACE="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}" scripts/publish.sh
+        shell: bash
+      - name: commit catalog.json
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add catalog.json
+          git diff --cached --quiet || git commit -m "catalog: publish $(sed -n 's/^version = "\(.*\)"$/\1/p' pyproject.toml)"
+          git push
