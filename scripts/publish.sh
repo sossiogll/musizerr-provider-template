@@ -1,7 +1,10 @@
 #!/bin/sh
 # Publish the provider's image for linux/amd64 and linux/arm64 and pin it in catalog.json.
 #
-#   scripts/publish.sh
+#   scripts/publish.sh [--check]
+#
+#   --check          only say whether the version is published: prints "published <image>:<version>" or
+#                    "missing <image>:<version>" and pushes nothing
 #
 #   IMAGE_NAMESPACE  where the image goes (default: ghcr.io/<owner of the origin remote>, lower case)
 #   CATALOG_NAME     the catalog's name, when catalog.json does not exist yet (default: "<repository> providers")
@@ -11,11 +14,20 @@
 # Steps: (1) build the image for this machine and ask the provider for its org.musizerr.provider.* labels (the
 # provider describes itself: name, roles, contract version, permissions), (2) build it with them for both
 # platforms and push <namespace>/musizerr-provider-<name>:<version of pyproject.toml>, (3) write the entry in
-# catalog.json, pinned by the digest of the multi-architecture index. Commit catalog.json afterwards: it is what
-# a Musizerr source points at. Needs Docker and `docker login ghcr.io` (a token that may write packages); the
-# GitHub workflow .github/workflows/publish.yml runs this same script.
+# catalog.json, pinned by the digest of the multi-architecture index. A version that is already published is never
+# pushed again: the script says so and changes nothing (raise the version in pyproject.toml). A registry that answers
+# "not found", or refuses access (a package that does not exist yet), means not published: the push would be refused
+# too, so nothing is overwritten; any other failure (the network) is an error. catalog.json is what a Musizerr source
+# points at: the workflow .github/workflows/publish.yml runs this script on every push to dev and commits it there;
+# from your machine, commit it yourself. Needs Docker and `docker login ghcr.io` (a token that may write packages).
 set -eu
 
+CHECK=false
+case ${1:-} in
+  --check) CHECK=true ;;
+  "") ;;
+  *) sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+esac
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ROOT"
 if [ -z "${IMAGE_NAMESPACE:-}" ]; then
@@ -42,6 +54,24 @@ NAME=$(sed -n 's/^org.musizerr.provider.name=//p' "$TMP/labels")
 [ -n "$NAME" ] || { echo "the provider printed no name label" >&2; exit 1; }
 IMAGE=$IMAGE_NAMESPACE/musizerr-provider-$NAME
 sed 's/^/   /' "$TMP/labels" >&2
+
+if docker buildx imagetools inspect "$IMAGE:$VERSION" >/dev/null 2>"$TMP/error"; then
+  state=published
+elif grep -qiE 'not found|manifest unknown|name unknown|denied|unauthorized|forbidden' "$TMP/error"; then
+  state=missing
+else
+  cat "$TMP/error" >&2
+  echo "cannot tell whether $IMAGE:$VERSION is published" >&2
+  exit 1
+fi
+if $CHECK; then
+  echo "$state $IMAGE:$VERSION"
+  exit 0
+fi
+if [ "$state" = published ]; then
+  echo "== $IMAGE:$VERSION is published already: nothing to do (raise the version in pyproject.toml to publish)" >&2
+  exit 0
+fi
 
 set --
 while IFS= read -r line; do
